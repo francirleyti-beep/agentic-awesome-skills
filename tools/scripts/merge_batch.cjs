@@ -619,6 +619,8 @@ function loadPullRequestDetails(projectRoot, repoSlug, prNumber) {
       "number",
       "title",
       "headRefOid",
+      "headRefName",
+      "headRepository",
       "url",
     ].join(","),
   });
@@ -987,6 +989,7 @@ function validateActionRequiredRuns(
   prNumber,
   headSha,
   allowedWorkflowPaths = APPROVAL_WORKFLOW_PATHS,
+  prIdentity = null,
 ) {
   const workflowById = new Map(
     workflows
@@ -1027,7 +1030,23 @@ function validateActionRequiredRuns(
       reasons.push("head SHA does not match the captured pull request head");
     }
     if (!prNumbers.includes(prNumber)) {
-      reasons.push(`pull request metadata does not contain #${prNumber}`);
+      const identityValues = [
+        run?.head_branch,
+        run?.head_repository?.full_name,
+        run?.repository?.full_name,
+        prIdentity?.headRefName,
+        prIdentity?.headRepository,
+        prIdentity?.baseRepository,
+      ];
+      const canBindEmptyMetadata = Array.isArray(run?.pull_requests)
+        && run.pull_requests.length === 0
+        && identityValues.every((value) => typeof value === "string" && value.length > 0)
+        && run?.head_branch === prIdentity.headRefName
+        && run?.head_repository?.full_name === prIdentity.headRepository
+        && run?.repository?.full_name === prIdentity.baseRepository;
+      if (!canBindEmptyMetadata) {
+        reasons.push(`pull request metadata does not contain #${prNumber} and the exact fork identity does not match`);
+      }
     }
     if (reasons.length) {
       throw new Error(`Refusing workflow run ${runId || "<unknown>"}: ${reasons.join("; ")}.`);
@@ -1114,6 +1133,11 @@ function approveActionRequiredRuns(projectRoot, repoSlug, prDetails, options = {
     prNumber,
     headOid,
     options.allowedWorkflowPaths || APPROVAL_WORKFLOW_PATHS,
+    {
+      headRefName: prDetails.headRefName,
+      headRepository: prDetails.headRepository?.nameWithOwner,
+      baseRepository: repoSlug,
+    },
   );
 
   assertUnchangedTuple(
